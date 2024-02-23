@@ -1,0 +1,79 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+temp_df = pd.read_html('https://fbref.com/en/comps/9/schedule/Premier-League-Scores-and-Fixtures')
+results = pd.DataFrame(temp_df[0])
+print(results.loc[results['Wk']>8])
+
+# drop rows with missing Wk values in the column
+results = results.loc[results['Wk'].notnull()]
+
+# Create a dataframe with a column called Team, with values of the unique home teams in temp_df
+teams = pd.DataFrame(temp_df[0]['Home'].unique(), columns=['Team'])
+
+# add 38 numbered, empty columns to the teams df - set the first column value equal to 400
+teams['0.0'] = 400
+for i in range(1, 39):
+    teams[str(float(i))] = np.nan
+
+# Create a function that takes two teams elo ratings and returns the expected score for the home team
+def expected_score(home, away):
+    return 1 / (1 + 10 ** ((away - home) / 400))
+
+# Create a function that takes two teams elo ratings and returns the updated elo ratings for both teams
+def update_elo(home, away, home_score, away_score, k=20):
+    home_expected = expected_score(home, away)
+    away_expected = expected_score(away, home)
+    
+    if home_score > away_score:
+        home_new = home + k * (1 - home_expected)
+        away_new = away + k * (0 - away_expected)
+    elif away_score > home_score:
+        home_new = home + k * (0 - home_expected)
+        away_new = away + k * (1 - away_expected)
+    else:
+        home_new = home + k * (0.5 - home_expected)
+        away_new = away + k * (0.5 - away_expected)
+    
+    return home_new, away_new
+
+# Create a function that takes a team name and matchday and returns the elo rating for that team
+def get_elo(team, matchday):
+    return teams.loc[teams['Team'] == team][str(matchday)].values[0]
+
+
+# Pull the home score and away score from the results df (score column) and convert to floats
+results['Home_score'] = results['Score'].str.split('–').str[0].astype(float)
+results['Away_score'] = results['Score'].str.split('–').str[1].astype(float)
+
+# iterate through the rows of the results df
+for index, row in results.iterrows():
+    if ~np.isnan(row['Home_score']):
+        # if the matchday is 1, set the home and away elo ratings to 400
+        if row['Wk'] == 1:
+            home_elo = 400
+            away_elo = 400
+        # otherwise, set the home and away elo ratings to the elo ratings from the previous matchday
+        else:
+            home_elo = get_elo(row['Home'], row['Wk'] - 1.0)
+            away_elo = get_elo(row['Away'], row['Wk'] - 1.0)
+
+            # If home_elo null, pull most recent non-null elo rating
+            if np.isnan(home_elo):
+                home_elo = get_elo(row['Home'], row['Wk'] - 2.0)
+            # If away_elo null, pull most recent non-null elo rating
+            if np.isnan(away_elo):
+                away_elo = get_elo(row['Away'], row['Wk'] - 2.0)
+        
+        # update the elo ratings for both teams
+        home_new, away_new = update_elo(home_elo, away_elo, row['Home_score'], row['Away_score'])
+        print(home_new)
+        
+        # set the elo ratings for the current matchday for both teams
+        teams.loc[teams['Team'] == row['Home'], str(row['Wk'])] = home_new
+        teams.loc[teams['Team'] == row['Away'], str(row['Wk'])] = away_new
+
+
+
+
