@@ -174,4 +174,4 @@ class ConnectFour:
 connectFour = ConnectFour()
 connectFour.play()
 
-print(5+6)
+print(5+7)
